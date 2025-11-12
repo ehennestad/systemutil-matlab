@@ -1,0 +1,14 @@
+{
+    "Namespace" : "sysutil",
+    "ToolboxOptions": {
+        "Identifier": "cab1ebc0-ae46-40cc-b742-63ca0147f24b",
+        "ToolboxName": "System Utility Toolbox",
+        "AuthorName": "Eivind Hennestad",
+        "AuthorEmail": "None",
+        "AuthorCompany": "None",
+        "Summary": "A set of system utilities for MATLAB",
+        "Description": "A set of system utilities for MATLAB. The goal is to be cross platform compatible and return MATLAB objects",
+        "MinimumMatlabRelease": "R2019b",
+        "MaximumMatlabRelease": ""
+    }
+}
