@@ -9,7 +9,7 @@ on:
 
 jobs:
   test:
-    name: MATLAB Tests on ${{ matrix.os }} (${{ matrix.matlab-release }})
+    name: Tests on ${{ matrix.os }} (${{ matrix.matlab-release }})
     runs-on: ${{ matrix.os }}
     
     strategy:
