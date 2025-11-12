@@ -18,24 +18,24 @@ function infoTable = listMountedDrives()
 % Written by Eivind Hennestad | 2022-11-24
 
 % Todo:
-% [ ] Implement for linux systems
+% [ ] Implement for linux systems
 % [ ] Add internal, external (how to get this on pc?)
-% [ ] On mac, file system is not correct...
-% [ ] On mac, don't show hidden partitions?
-% [ ] On windows, is the serial number complete?
-% [ ] On mac, add serial number
+% [ ] On mac, file system is not correct...
+% [ ] On mac, don't show hidden partitions?
+% [ ] On mac, add serial number
 % [ ] On mac, parse result when using -plist instead?
-% [ ] On windows, use 'where drivetype=3' i.e 'wmic logicaldisk where drivetype=3 get ...'
-% [ ] Should not rely on wmic, which is not always available on newer windows
 
     if ismac
         [~, infoStr] = system('diskutil list physical');
         infoTable = convertListToTableMac(infoStr);
 
     elseif ispc
-        [~, infoStr] = system(['wmic logicaldisk get DeviceId, ', ...
-            'VolumeName, VolumeSerialNumber, FileSystem, Size, ', ...
-            'DriveType' ] );
+        % Use PowerShell Get-Volume instead of deprecated wmic
+        [~, infoStr] = system(['powershell -Command "Get-Volume | ', ...
+            'Where-Object {$_.DriveLetter} | ', ...
+            'Select-Object DriveLetter, FileSystemLabel, FileSystem, ', ...
+            'Size, DriveType | ', ...
+            'ConvertTo-Csv -NoTypeInformation"']);
         infoTable = convertListToTablePc(infoStr);
 
     elseif isunix
@@ -113,26 +113,38 @@ end
 
 function infoTable = convertListToTablePc(infoStr)
 
+    % Parse CSV output from PowerShell Get-Volume
     infostrCell = splitStringIntoRows(infoStr);
-
-    % Detect indices where rows should be split
-    colStart = regexp(infostrCell{1}, '(?<=\ )\S{1}', 'start');
-    colStart = [1, colStart];
-
-    C = splitRowsIntoColumns(infostrCell, colStart);
-
-    %C{1,6} = 'SerialNumber'; % Shorten name
-    C = strrep(C, 'VolumeSerialNumber', 'SerialNumber');
-    infoTable = cell2table(C(2:end,:), 'VariableNames',C(1,:));
+    
+    % Remove quotes and split by comma
+    C = cellfun(@(row) strsplit(strrep(row, '"', ''), ','), ...
+        infostrCell, 'UniformOutput', false);
+    C = vertcat(C{:});
+    
+    % Rename columns to match expected format
+    C{1,1} = 'DeviceID';
+    C{1,2} = 'VolumeName';
+    C{1,3} = 'FileSystem';
+    C{1,4} = 'Size';
+    C{1,5} = 'DriveType';
+    
+    % Add colon to drive letters
+    C(2:end, 1) = cellfun(@(x) [x, ':'], C(2:end, 1), 'UniformOutput', false);
+    
+    infoTable = cell2table(C(2:end,:), 'VariableNames', C(1,:));
 
     % Compute size and add unit
-    infoTable.Size = str2double( infoTable.Size );
+    infoTable.Size = str2double(infoTable.Size);
 
     power = floor(log10(infoTable.Size)/3)*3;
     infoTable.Size = infoTable.Size ./ 10.^(power);
 
     sizeUnit = categorical(power, [3, 6, 9, 12], {'kB', 'MB', 'GB', 'TB'});
     infoTable = addvars(infoTable, sizeUnit, 'NewVariableNames', 'SizeUnit');
+    
+    % Add empty SerialNumber column (Get-Volume doesn't provide this easily)
+    serialNumber = repmat(missing, size(infoTable, 1), 1);
+    infoTable = addvars(infoTable, serialNumber, 'NewVariableNames', 'SerialNumber');
     
     infoTable.DriveType = labelDriveTypePC(infoTable.DriveType);
 end
@@ -172,17 +184,11 @@ end
 
 function driveType = labelDriveTypePC(driveType)
     
-    %     0	Unknown
-    %     1	No Root Directory
-    %     2	Removable Disk
-    %     3	Local Disk
-    %     4	Network Drive
-    %     5	Compact Disc
-    %     6	RAM Disk
-
-    driveType = categorical(driveType, {'0','1','2','3','4','5','6'}, ...
-        {'Unknown', 'No Root Directory', 'Removable Disk', 'Local Disk', ...
-         'Network Drive', 'Compact Disc', 'RAM Disk'});
+    % Map Get-Volume DriveType values to descriptive names
+    % Get-Volume returns: Unknown=0, Fixed=3, Removable=2, CD-ROM=5, Network=4
+    
+    driveType = categorical(driveType, {'0','2','3','4','5'}, ...
+        {'Unknown', 'Removable', 'Fixed', 'Network', 'CD-ROM'});
 end
 
 function infoTable = postprocessTable(infoTable)
