@@ -28,12 +28,17 @@ jobs:
         release: ${{ matrix.matlab-release }}
         cache: true
     
+    - name: Display drives
+      uses: matlab-actions/run-command@v2
+      with:
+        command: |
+          addpath(genpath("src"));
+          sysutil.drive.listMountedDrives()
+
     - name: Run tests
       uses: matlab-actions/run-tests@v2
       with:
-        source-folder: src
-        test-results-junit: test-results/results.xml
-        code-coverage-cobertura: code-coverage/coverage.xml
+
     
     - name: Upload test results
       if: always()
