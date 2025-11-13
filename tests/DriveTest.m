@@ -26,10 +26,11 @@ classdef DriveTest < matlab.unittest.TestCase
             infoTable = sysutil.drive.listMountedDrives();
             
             if ismac
-                % Mac format: /dev/diskX
+                % Mac format: disk identifiers (e.g., disk0s1, disk1s2)
                 for i = 1:height(infoTable)
-                    testCase.verifyTrue(startsWith(infoTable.DeviceID(i), '/dev/disk'), ...
-                        'Mac DeviceID should start with /dev/disk');
+                    deviceID = char(infoTable.DeviceID(i));
+                    testCase.verifyTrue(startsWith(deviceID, 'disk') || startsWith(deviceID, '/dev/disk'), ...
+                        'Mac DeviceID should start with "disk" or "/dev/disk"');
                 end
             elseif ispc
                 % Windows format: C:, D:, etc.
