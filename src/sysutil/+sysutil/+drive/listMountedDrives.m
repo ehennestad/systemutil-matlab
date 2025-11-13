@@ -38,7 +38,7 @@ function infoTable = listMountedDrives()
             'ConvertTo-Csv -NoTypeInformation"']);
         infoTable = convertListToTablePc(infoStr);
 
-    elseif isunix % Use lsblk 
+    elseif isunix % Use lsblk
         [~, infoStr] = system('lsblk -o NAME,LABEL,FSTYPE,SIZE,TYPE,MOUNTPOINT -P -b');
         infoTable = convertListToTableLinux(infoStr);
     end
@@ -61,7 +61,7 @@ function infoTable = convertListToTableMac(infoStr)
     infostrCell = splitStringIntoRows(infoStr);
 
     rowIdxRemove = strncmp(infostrCell, '/dev', 4);
-        
+
     % Keep track of rows belonging to same drive / device
     deviceNumber = cumsum(rowIdxRemove);
     deviceHeaders = infostrCell(rowIdxRemove);
@@ -96,7 +96,7 @@ function infoTable = convertListToTableMac(infoStr)
     expression = '\((.*)\)';
     driveType = regexp(deviceHeaders, expression, 'tokens');
     driveTypeColumnData = arrayfun(@(x) driveType{x}{1}{1}, deviceNumber, 'uni', 0);
-    
+
     colIdx = size(C, 2) + 1;
     C(:, colIdx) = driveTypeColumnData;
 
@@ -116,22 +116,22 @@ function infoTable = convertListToTablePc(infoStr)
 
     % Parse CSV output from PowerShell Get-Volume
     infostrCell = splitStringIntoRows(infoStr);
-    
+
     % Remove quotes and split by comma
     C = cellfun(@(row) strsplit(strrep(row, '"', ''), ','), ...
         infostrCell, 'UniformOutput', false);
     C = vertcat(C{:});
-    
+
     % Rename columns to match expected format
     C{1,1} = 'DeviceID';
     C{1,2} = 'VolumeName';
     C{1,3} = 'FileSystem';
     C{1,4} = 'Size';
     C{1,5} = 'DriveType';
-    
+
     % Add colon to drive letters
     C(2:end, 1) = cellfun(@(x) [x, ':'], C(2:end, 1), 'UniformOutput', false);
-    
+
     infoTable = cell2table(C(2:end,:), 'VariableNames', C(1,:));
 
     % Compute size and add unit
@@ -142,11 +142,11 @@ function infoTable = convertListToTablePc(infoStr)
 
     sizeUnit = categorical(power, [3, 6, 9, 12], {'kB', 'MB', 'GB', 'TB'});
     infoTable = addvars(infoTable, sizeUnit, 'NewVariableNames', 'SizeUnit');
-    
+
     % Add empty SerialNumber column (Get-Volume doesn't provide this easily)
     serialNumber = repmat(missing, size(infoTable, 1), 1);
     infoTable = addvars(infoTable, serialNumber, 'NewVariableNames', 'SerialNumber');
-    
+
     % Label drive types (handle empty values)
     for i = 1:height(infoTable)
         if isempty(infoTable.DriveType{i}) || strcmp(infoTable.DriveType{i}, '')
@@ -157,7 +157,7 @@ function infoTable = convertListToTablePc(infoStr)
 end
 
 function infoStrCell = splitStringIntoRows(infoStr)
-    
+
     % Split string into rows
     infoStrCell = textscan( infoStr, '%s', 'delimiter', '\n' );
     infoStrCell = infoStrCell{1};
@@ -167,7 +167,7 @@ function infoStrCell = splitStringIntoRows(infoStr)
 end
 
 function C = splitRowsIntoColumns(infostrCell, splitIdx)
-    
+
     numRows = numel(infostrCell);
     numColumns = numel(splitIdx);
 
@@ -185,41 +185,41 @@ function C = splitRowsIntoColumns(infostrCell, splitIdx)
         colIdx = splitIdx(i) : splitIdx(i+1)-1;
         C(:, i) = cellfun(@(str) str(colIdx), infostrCell, 'uni', 0);
     end
-        
+
     C = strtrim(C); % Remove trailing whitespace from all cells
 end
 
 function driveType = labelDriveTypePC(driveType)
-    
+
     % Map Get-Volume DriveType values to descriptive names
     % Get-Volume returns: Unknown=0, Fixed=3, Removable=2, CD-ROM=5, Network=4
-    
+
     driveType = categorical(driveType, {'0','2','3','4','5'}, ...
         {'Unknown', 'Removable', 'Fixed', 'Network', 'CD-ROM'});
 end
 
 function infoTable = convertListToTableLinux(infoStr)
-    
+
     % Parse lsblk output (key="value" format)
     infostrCell = splitStringIntoRows(infoStr);
-    
+
     % Keep only mounted drives (has MOUNTPOINT)
     mountedIdx = contains(infostrCell, 'MOUNTPOINT="/') | contains(infostrCell, 'MOUNTPOINT="/boot');
     infostrCell = infostrCell(mountedIdx);
-    
+
     if isempty(infostrCell)
         % Create empty table with correct structure
         infoTable = cell2table(cell(0, 7), 'VariableNames', ...
             {'DeviceID', 'VolumeName', 'SerialNumber', 'FileSystem', 'Size', 'SizeUnit', 'DriveType'});
         return;
     end
-    
+
     numRows = numel(infostrCell);
     C = cell(numRows, 7);
-    
+
     for i = 1:numRows
         row = infostrCell{i};
-        
+
         % Extract key-value pairs
         name = extractValue(row, 'NAME');
         label = extractValue(row, 'LABEL');
@@ -227,29 +227,29 @@ function infoTable = convertListToTableLinux(infoStr)
         sizeBytes = extractValue(row, 'SIZE');
         driveType = extractValue(row, 'TYPE');
         mountpoint = extractValue(row, 'MOUNTPOINT');
-        
+
         % DeviceID: /dev/name
         C{i, 1} = ['/dev/', name];
-        
+
         % VolumeName: use label if available, otherwise mountpoint
         if isempty(label)
             C{i, 2} = mountpoint;
         else
             C{i, 2} = label;
         end
-        
+
         % SerialNumber: not easily available with lsblk
         C{i, 3} = '';
-        
+
         % FileSystem
         C{i, 4} = fstype;
-        
+
         % Size (in bytes, will convert later)
         C{i, 5} = sizeBytes;
-        
+
         % SizeUnit (placeholder, will be computed)
         C{i, 6} = 'B';
-        
+
         % DriveType
         if strcmp(driveType, 'disk')
             C{i, 7} = 'Fixed';
@@ -263,16 +263,16 @@ function infoTable = convertListToTableLinux(infoStr)
             C{i, 7} = driveType;
         end
     end
-    
+
     infoTable = cell2table(C, 'VariableNames', ...
         {'DeviceID', 'VolumeName', 'SerialNumber', 'FileSystem', 'Size', 'SizeUnit', 'DriveType'});
-    
+
     % Convert size to numeric and compute appropriate unit
     infoTable.Size = str2double(infoTable.Size);
-    
+
     power = floor(log10(infoTable.Size)/3)*3;
     infoTable.Size = infoTable.Size ./ 10.^(power);
-    
+
     sizeUnit = categorical(power, [3, 6, 9, 12], {'kB', 'MB', 'GB', 'TB'});
     infoTable.SizeUnit = sizeUnit;
 end
