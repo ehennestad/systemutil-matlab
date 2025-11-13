@@ -16,6 +16,7 @@ function infoTable = listMountedDrives()
 %   PC  : https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-logicaldisk
 
 % Written by Eivind Hennestad | 2022-11-24
+% Updated by Claude Sonnet 4.5 | 2025-11-13
 
 % Todo:
 % [ ] Add internal, external (how to get this on pc?)
@@ -25,12 +26,11 @@ function infoTable = listMountedDrives()
 % [ ] On mac, parse result when using -plist instead?
 % [ ] On linux, add serial number (use lsblk -o +UUID or blkid)
 
-    if ismac
+    if ismac % Use diskutil
         [~, infoStr] = system('diskutil list physical');
         infoTable = convertListToTableMac(infoStr);
 
-    elseif ispc
-        % Use PowerShell Get-Volume instead of deprecated wmic
+    elseif ispc % Use PowerShell Get-Volume
         [~, infoStr] = system(['powershell -Command "Get-Volume | ', ...
             'Where-Object {$_.DriveLetter} | ', ...
             'Select-Object DriveLetter, FileSystemLabel, FileSystem, ', ...
@@ -38,8 +38,7 @@ function infoTable = listMountedDrives()
             'ConvertTo-Csv -NoTypeInformation"']);
         infoTable = convertListToTablePc(infoStr);
 
-    elseif isunix
-        % Use lsblk for Linux systems
+    elseif isunix % Use lsblk 
         [~, infoStr] = system('lsblk -o NAME,LABEL,FSTYPE,SIZE,TYPE,MOUNTPOINT -P -b');
         infoTable = convertListToTableLinux(infoStr);
     end
