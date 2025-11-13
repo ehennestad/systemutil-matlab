@@ -46,12 +46,12 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: test-results-${{ matrix.os }}
+        name: test-results-${{ matrix.os }}-${{ matrix.matlab-release }}
         path: test-results/
     
     - name: Upload coverage results
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: coverage-${{ matrix.os }}
+        name: coverage-${{ matrix.os }}-${{ matrix.matlab-release }}
         path: code-coverage/
