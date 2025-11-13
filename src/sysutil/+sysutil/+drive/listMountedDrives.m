@@ -121,7 +121,12 @@ function infoTable = convertListToTablePc(infoStr)
     C = cellfun(@(row) strsplit(strrep(row, '"', ''), ','), ...
         infostrCell, 'UniformOutput', false);
     C = vertcat(C{:});
-
+    
+    % Split by comma and remove quotes ()
+    C = cellfun(@(row) strsplit(row, ','), infostrCell, 'UniformOutput', false);
+    C = vertcat(C{:});
+    C = strrep(C, '"', '');
+    
     % Rename columns to match expected format
     C{1,1} = 'DeviceID';
     C{1,2} = 'VolumeName';
