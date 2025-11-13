@@ -30,12 +30,22 @@ function infoTable = listMountedDrives()
         [~, infoStr] = system('diskutil list physical');
         infoTable = convertListToTableMac(infoStr);
 
-    elseif ispc % Use PowerShell Get-Volume
-        [~, infoStr] = system(['powershell -Command "Get-Volume | ', ...
-            'Where-Object {$_.DriveLetter} | ', ...
-            'Select-Object DriveLetter, FileSystemLabel, FileSystem, ', ...
-            'Size, DriveType | ', ...
-            'ConvertTo-Csv -NoTypeInformation"']);
+    elseif ispc % Use PowerShell Get-Volume with Get-Partition for drive type
+        [~, infoStr] = system(['powershell -Command "', ...
+            'Get-Volume | Where-Object {$_.DriveLetter} | ', ...
+            'ForEach-Object { ', ...
+            '$vol = $_; ', ...
+            '$partition = Get-Partition -DriveLetter $vol.DriveLetter -ErrorAction SilentlyContinue; ', ...
+            '$disk = if ($partition) { Get-Disk -Number $partition.DiskNumber -ErrorAction SilentlyContinue } else { $null }; ', ...
+            '$busType = if ($disk) { $disk.BusType } else { ''Unknown'' }; ', ...
+            '[PSCustomObject]@{ ', ...
+            'DriveLetter=$vol.DriveLetter; ', ...
+            'FileSystemLabel=$vol.FileSystemLabel; ', ...
+            'FileSystem=$vol.FileSystem; ', ...
+            'Size=$vol.Size; ', ...
+            'BusType=$busType ', ...
+            '} ', ...
+            '} | ConvertTo-Csv -NoTypeInformation"']);
         infoTable = convertListToTablePc(infoStr);
 
     elseif isunix % Use lsblk 
@@ -127,7 +137,7 @@ function infoTable = convertListToTablePc(infoStr)
     C{1,2} = 'VolumeName';
     C{1,3} = 'FileSystem';
     C{1,4} = 'Size';
-    C{1,5} = 'DriveType';
+    C{1,5} = 'BusType';
     
     % Add colon to drive letters
     C(2:end, 1) = cellfun(@(x) [x, ':'], C(2:end, 1), 'UniformOutput', false);
@@ -147,13 +157,9 @@ function infoTable = convertListToTablePc(infoStr)
     serialNumber = repmat(missing, size(infoTable, 1), 1);
     infoTable = addvars(infoTable, serialNumber, 'NewVariableNames', 'SerialNumber');
     
-    % Label drive types (handle empty values)
-    for i = 1:height(infoTable)
-        if isempty(infoTable.DriveType{i}) || strcmp(infoTable.DriveType{i}, '')
-            infoTable.DriveType{i} = '3'; % Default to Fixed for empty values
-        end
-    end
-    infoTable.DriveType = labelDriveTypePC(infoTable.DriveType);
+    % Convert BusType to DriveType
+    infoTable.DriveType = labelDriveTypePC(infoTable.BusType);
+    infoTable = removevars(infoTable, 'BusType');
 end
 
 function infoStrCell = splitStringIntoRows(infoStr)
@@ -189,13 +195,37 @@ function C = splitRowsIntoColumns(infostrCell, splitIdx)
     C = strtrim(C); % Remove trailing whitespace from all cells
 end
 
-function driveType = labelDriveTypePC(driveType)
+function driveType = labelDriveTypePC(busType)
     
-    % Map Get-Volume DriveType values to descriptive names
-    % Get-Volume returns: Unknown=0, Fixed=3, Removable=2, CD-ROM=5, Network=4
+    % Map BusType from Get-Disk to descriptive drive types
+    % Common BusTypes: USB, SATA, NVMe, ATAPI, RAID, SAS, etc.
     
-    driveType = categorical(driveType, {'0','2','3','4','5'}, ...
-        {'Unknown', 'Removable', 'Fixed', 'Network', 'CD-ROM'});
+    driveType = cell(size(busType));
+    for i = 1:numel(busType)
+        bt = char(busType(i));
+        switch bt
+            case 'USB'
+                driveType{i} = 'Removable (USB)';
+            case {'SATA', 'ATA', 'IDE'}
+                driveType{i} = 'Fixed (SATA)';
+            case 'NVMe'
+                driveType{i} = 'Fixed (NVMe)';
+            case 'ATAPI'
+                driveType{i} = 'CD-ROM';
+            case 'RAID'
+                driveType{i} = 'RAID';
+            case {'SAS', 'SCSI'}
+                driveType{i} = 'Fixed (SAS/SCSI)';
+            case 'Virtual'
+                driveType{i} = 'Virtual';
+            case 'File Backed Virtual'
+                driveType{i} = 'Virtual';
+            otherwise
+                driveType{i} = 'Fixed';
+        end
+    end
+    
+    driveType = string(driveType);
 end
 
 function infoTable = convertListToTableLinux(infoStr)
