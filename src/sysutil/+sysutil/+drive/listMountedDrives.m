@@ -148,6 +148,12 @@ function infoTable = convertListToTablePc(infoStr)
     serialNumber = repmat(missing, size(infoTable, 1), 1);
     infoTable = addvars(infoTable, serialNumber, 'NewVariableNames', 'SerialNumber');
     
+    % Label drive types (handle empty values)
+    for i = 1:height(infoTable)
+        if isempty(infoTable.DriveType{i}) || strcmp(infoTable.DriveType{i}, '')
+            infoTable.DriveType{i} = '3'; % Default to Fixed for empty values
+        end
+    end
     infoTable.DriveType = labelDriveTypePC(infoTable.DriveType);
 end
 
