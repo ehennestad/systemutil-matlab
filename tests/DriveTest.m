@@ -5,13 +5,6 @@ classdef DriveTest < matlab.unittest.TestCase
         function testListMountedDrives(testCase)
             % Test that listMountedDrives returns a valid table
             
-            if isunix && ~ismac
-                % Linux not yet implemented
-                testCase.verifyError(@() sysutil.drive.listMountedDrives(), ...
-                    'MATLAB:error');
-                return;
-            end
-            
             infoTable = sysutil.drive.listMountedDrives();
             
             % Verify output is a table
@@ -30,10 +23,6 @@ classdef DriveTest < matlab.unittest.TestCase
         function testDeviceIDFormat(testCase)
             % Test that DeviceID format is correct for each platform
             
-            if isunix && ~ismac
-                return; % Skip on Linux
-            end
-            
             infoTable = sysutil.drive.listMountedDrives();
             
             if ismac
@@ -50,15 +39,17 @@ classdef DriveTest < matlab.unittest.TestCase
                     testCase.verifyEqual(strlength(infoTable.DeviceID(i)), 2, ...
                         'Windows DeviceID should be two characters (e.g., C:)');
                 end
+            elseif isunix
+                % Linux format: /dev/sdX, /dev/nvmeXnY, etc.
+                for i = 1:height(infoTable)
+                    testCase.verifyTrue(startsWith(infoTable.DeviceID(i), '/dev/'), ...
+                        'Linux DeviceID should start with /dev/');
+                end
             end
         end
         
         function testSizeIsNumeric(testCase)
             % Test that Size is numeric and positive
-            
-            if isunix && ~ismac
-                return; % Skip on Linux
-            end
             
             infoTable = sysutil.drive.listMountedDrives();
             
@@ -69,10 +60,6 @@ classdef DriveTest < matlab.unittest.TestCase
         
         function testSizeUnitIsValid(testCase)
             % Test that SizeUnit contains valid units
-            
-            if isunix && ~ismac
-                return; % Skip on Linux
-            end
             
             infoTable = sysutil.drive.listMountedDrives();
             
@@ -85,10 +72,6 @@ classdef DriveTest < matlab.unittest.TestCase
         
         function testDriveTypeIsString(testCase)
             % Test that DriveType is a string
-            
-            if isunix && ~ismac
-                return; % Skip on Linux
-            end
             
             infoTable = sysutil.drive.listMountedDrives();
             
@@ -157,6 +140,28 @@ classdef DriveTest < matlab.unittest.TestCase
             
             testCase.verifyTrue(all(diskNumbers >= 0), ...
                 'Disk numbers should be non-negative');
+        end
+        
+        function testLinuxFileSystem(testCase)
+            % Test that Linux returns FileSystem information
+            
+            if ~isunix || ismac
+                return; % Skip on non-Linux
+            end
+            
+            infoTable = sysutil.drive.listMountedDrives();
+            
+            % Common Linux filesystems
+            knownFS = {'ext2', 'ext3', 'ext4', 'xfs', 'btrfs', 'vfat', 'ntfs'};
+            hasKnownFS = false;
+            for i = 1:height(infoTable)
+                if ismember(lower(infoTable.FileSystem(i)), knownFS)
+                    hasKnownFS = true;
+                    break;
+                end
+            end
+            testCase.verifyTrue(hasKnownFS, ...
+                'At least one drive should have a recognized filesystem');
         end
     end
 end

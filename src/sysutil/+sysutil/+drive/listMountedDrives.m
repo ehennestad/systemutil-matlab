@@ -18,12 +18,12 @@ function infoTable = listMountedDrives()
 % Written by Eivind Hennestad | 2022-11-24
 
 % Todo:
-% [ ] Implement for linux systems
 % [ ] Add internal, external (how to get this on pc?)
 % [ ] On mac, file system is not correct...
 % [ ] On mac, don't show hidden partitions?
 % [ ] On mac, add serial number
 % [ ] On mac, parse result when using -plist instead?
+% [ ] On linux, add serial number (use lsblk -o +UUID or blkid)
 
     if ismac
         [~, infoStr] = system('diskutil list physical');
@@ -39,7 +39,9 @@ function infoTable = listMountedDrives()
         infoTable = convertListToTablePc(infoStr);
 
     elseif isunix
-        error('Not implemented for unix systems')
+        % Use lsblk for Linux systems
+        [~, infoStr] = system('lsblk -o NAME,LABEL,FSTYPE,SIZE,TYPE,MOUNTPOINT -P -b');
+        infoTable = convertListToTableLinux(infoStr);
     end
 
     infoTable = postprocessTable(infoTable);
@@ -189,6 +191,96 @@ function driveType = labelDriveTypePC(driveType)
     
     driveType = categorical(driveType, {'0','2','3','4','5'}, ...
         {'Unknown', 'Removable', 'Fixed', 'Network', 'CD-ROM'});
+end
+
+function infoTable = convertListToTableLinux(infoStr)
+    
+    % Parse lsblk output (key="value" format)
+    infostrCell = splitStringIntoRows(infoStr);
+    
+    % Keep only mounted drives (has MOUNTPOINT)
+    mountedIdx = contains(infostrCell, 'MOUNTPOINT="/') | contains(infostrCell, 'MOUNTPOINT="/boot');
+    infostrCell = infostrCell(mountedIdx);
+    
+    if isempty(infostrCell)
+        % Create empty table with correct structure
+        infoTable = cell2table(cell(0, 7), 'VariableNames', ...
+            {'DeviceID', 'VolumeName', 'SerialNumber', 'FileSystem', 'Size', 'SizeUnit', 'DriveType'});
+        return;
+    end
+    
+    numRows = numel(infostrCell);
+    C = cell(numRows, 7);
+    
+    for i = 1:numRows
+        row = infostrCell{i};
+        
+        % Extract key-value pairs
+        name = extractValue(row, 'NAME');
+        label = extractValue(row, 'LABEL');
+        fstype = extractValue(row, 'FSTYPE');
+        sizeBytes = extractValue(row, 'SIZE');
+        driveType = extractValue(row, 'TYPE');
+        mountpoint = extractValue(row, 'MOUNTPOINT');
+        
+        % DeviceID: /dev/name
+        C{i, 1} = ['/dev/', name];
+        
+        % VolumeName: use label if available, otherwise mountpoint
+        if isempty(label)
+            C{i, 2} = mountpoint;
+        else
+            C{i, 2} = label;
+        end
+        
+        % SerialNumber: not easily available with lsblk
+        C{i, 3} = '';
+        
+        % FileSystem
+        C{i, 4} = fstype;
+        
+        % Size (in bytes, will convert later)
+        C{i, 5} = sizeBytes;
+        
+        % SizeUnit (placeholder, will be computed)
+        C{i, 6} = 'B';
+        
+        % DriveType
+        if strcmp(driveType, 'disk')
+            C{i, 7} = 'Fixed';
+        elseif strcmp(driveType, 'part')
+            C{i, 7} = 'Partition';
+        elseif strcmp(driveType, 'loop')
+            C{i, 7} = 'Loop';
+        elseif strcmp(driveType, 'rom')
+            C{i, 7} = 'CD-ROM';
+        else
+            C{i, 7} = driveType;
+        end
+    end
+    
+    infoTable = cell2table(C, 'VariableNames', ...
+        {'DeviceID', 'VolumeName', 'SerialNumber', 'FileSystem', 'Size', 'SizeUnit', 'DriveType'});
+    
+    % Convert size to numeric and compute appropriate unit
+    infoTable.Size = str2double(infoTable.Size);
+    
+    power = floor(log10(infoTable.Size)/3)*3;
+    infoTable.Size = infoTable.Size ./ 10.^(power);
+    
+    sizeUnit = categorical(power, [3, 6, 9, 12], {'kB', 'MB', 'GB', 'TB'});
+    infoTable.SizeUnit = sizeUnit;
+end
+
+function value = extractValue(str, key)
+    % Extract value from KEY="VALUE" format
+    pattern = [key, '="([^"]*)"'];
+    tokens = regexp(str, pattern, 'tokens');
+    if ~isempty(tokens)
+        value = tokens{1}{1};
+    else
+        value = '';
+    end
 end
 
 function infoTable = postprocessTable(infoTable)
